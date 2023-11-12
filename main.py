@@ -91,7 +91,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.chat_id
-    await context.bot.send_message(user_id, text="Welcome!") #TODO-welcome message
+    await context.bot.send_message(user_id, text="Welcome!")  # TODO-welcome message
     await start_respond(user_id, context)
 
 
@@ -323,32 +323,52 @@ async def display_exp_and_inc(user_id, month, context: CallbackContext):
     cursor.execute('''
         SELECT exp_entry, description, category, amount
         FROM expenses
-        WHERE user_id = ?
+        WHERE user_id = ? AND month = ?
         ORDER BY category
-    ''', (user_id,))
+    ''', (user_id, month))
     expenses_data = cursor.fetchall()
 
     cursor.execute('''
         SELECT inc_entry, description, category, amount
         FROM income
-        WHERE user_id = ?
+        WHERE user_id = ? AND month = ?
         ORDER BY category
-    ''', (user_id,))
+    ''', (user_id, month))
     income_data = cursor.fetchall()
 
-    # Format and display Expenses
-    view_message = "<b>הכנסות</b>\n"
+    # Create a dictionary to group expenses by category
+    expenses_by_category = {}
     for row in expenses_data:
-        view_message += "{:<4} {:<15} {:<15} {:<5}\n".format(row[0], row[1], row[2], row[3])
+        exp_entry, description, category, amount = row
+        if category not in expenses_by_category:
+            expenses_by_category[category] = []
+        expenses_by_category[category].append((exp_entry, amount, description))
+
+    # Create a dictionary to group income by category
+    income_by_category = {}
+    for row in income_data:
+        inc_entry, description, category, amount = row
+        if category not in income_by_category:
+            income_by_category[category] = []
+        income_by_category[category].append((inc_entry, amount, description))
+
+    # Format and display Expenses
+    view_message = "<b>הכנסות</b>"
+    for category, entries in expenses_by_category.items():
+        view_message += f"\n<u>{category}</u>\n"
+        for entry in entries:
+            view_message += "({:})  {:<10} {:<20}\n".format(entry[0], entry[1], entry[2])
 
     # Format and display Income
-    view_message += "\n<b>הוצאות</b>\n"
-    for row in income_data:
-        view_message += "{:<4} {:<15} {:<15} {:<5}\n".format(row[0], row[1], row[2], row[3])
+    view_message += "\n\n<b>הוצאות</b>"
+    for category, entries in income_by_category.items():
+        view_message += f"\n<u>{category}</u>\n"
+        for entry in entries:
+            view_message += "({:})  {:<10} {:<20}\n".format(entry[0], entry[1], entry[2])
 
     # Send messages
+    view_message += "\n\nPress /menu to return to the Menu."
     await context.bot.send_message(user_id, text=view_message, parse_mode=ParseMode.HTML)
-    await display_main_menu(user_id, context)
 
 
 async def button(update: Update, context: CallbackContext):
@@ -413,7 +433,7 @@ async def button(update: Update, context: CallbackContext):
     elif data == 'settings':
         await profile_settings(user_id, context)
     elif data == 'manage':
-        await manage_finances_command(user_id,context)
+        await manage_finances_command(user_id, context)
 
     elif data == 'reset_database':
         await reset_database(user_id, context)
@@ -507,7 +527,7 @@ async def button(update: Update, context: CallbackContext):
         await context.bot.send_message(user_id, text="Choose:", reply_markup=reply_markup)
 
     elif data == "add_income" or data == "add_expense":
-        split_data = data.split("_",1)[-1]
+        split_data = data.split("_", 1)[-1]
         if split_data == "income":
             await add_income(user_id, context)
         else:
@@ -634,7 +654,7 @@ async def button(update: Update, context: CallbackContext):
             temp = "inc"
 
         cursor.execute(f'UPDATE {exp_and_inc} SET category = ? WHERE user_id = ? AND {temp}_entry = ?',
-                           (data.split("_")[0], user_id, context.user_data['entry']))
+                       (data.split("_")[0], user_id, context.user_data['entry']))
         conn.commit()
 
         await context.bot.send_message(user_id,
@@ -819,7 +839,7 @@ async def handle_user_input(update: Update, context: CallbackContext):
 
             await context.bot.send_message(user_id,
                                            "Done!\n\nTo view your details, use the 'Expenses & Income' button in the Main Menu (/menu)")
-            await manage_finances_command(user_id,context)
+            await manage_finances_command(user_id, context)
             context.user_data.clear()
 
         elif pending_action == "income_entry" or pending_action == "expense_entry":
@@ -860,7 +880,8 @@ async def handle_user_input(update: Update, context: CallbackContext):
                                                reply_markup=reply_markup)
 
             else:
-                await context.bot.send_message(user_id, f"The specified entry is not found in your {exp_or_inc}. Please try again:")
+                await context.bot.send_message(user_id,
+                                               f"The specified entry is not found in your {exp_or_inc}. Please try again:")
 
         elif pending_action == "new_income_Month" or pending_action == "new_expense_Month" or pending_action == "new_income_Description" or pending_action == "new_expense_Description" or pending_action == "new_income_Amount" or pending_action == "new_expense_Amount":
             exp_or_inc = pending_action.split("_")[1]
@@ -879,7 +900,7 @@ async def handle_user_input(update: Update, context: CallbackContext):
 
             await context.bot.send_message(user_id,
                                            "Done!\n\nTo view your details, use the 'Expenses & Income' button in the Main Menu (/menu)")
-            await manage_finances_command(user_id,context)
+            await manage_finances_command(user_id, context)
             context.user_data.clear()
 
         elif pending_action == "delete_income" or pending_action == "delete_expense":
