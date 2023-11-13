@@ -15,8 +15,6 @@ with open('config.txt') as file:
         if key == 'TOKEN':
             TOKEN = value
 
-entry_id = 0
-
 # Connect to the SQLite database
 conn = sqlite3.connect('my_wallet.db')
 cursor = conn.cursor()
@@ -91,7 +89,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.chat_id
-    await context.bot.send_message(user_id, text="Welcome!")  # TODO-welcome message
+    await context.bot.send_message(user_id, text="Welcome! I'm your new expense tracker bot 😊\n\nHere, you can manage your monthly expenses and income. \nFeel free to add, edit, and track your financial transactions. \nYou can even keep an eye on your bank account balance!\n\nEnjoy!")
     await start_respond(user_id, context)
 
 
@@ -171,7 +169,7 @@ async def monthly_expenses(user_id, context: CallbackContext):
     category = 'החזרים באשראי'
     total = 0
 
-    cursor.execute('SELECT amount FROM expenses WHERE user_id = ? AND month = ?', (user_id, month))
+    cursor.execute('SELECT amount FROM expenses WHERE user_id = ? AND month = ? AND category != ?', (user_id, month, "תנועות חשבון"))
     results = cursor.fetchall()
     if results:
         for row in results:
@@ -184,7 +182,7 @@ async def monthly_expenses(user_id, context: CallbackContext):
         for row in results:
             total -= row[0]
 
-    return total
+    return round(total, 2)
 
 
 async def monthly_income(user_id, context: CallbackContext):
@@ -206,7 +204,7 @@ async def monthly_income(user_id, context: CallbackContext):
         for row in results:
             total -= row[0]
 
-    return total
+    return round(total, 2)
 
 
 async def balance_overview_command(user_id, context: CallbackContext):
@@ -218,7 +216,7 @@ async def balance_overview_command(user_id, context: CallbackContext):
 
     if bank_account:
         bank_account += month_inc
-        remain = bank_account - month_exp
+        remain = round((bank_account - month_exp), 2)
         await context.bot.send_message(user_id,
                                        text=f"<b>Hello {first_name} {last_name}!</b>\n\nUntil this day, there is {bank_account} NIS in your bank account.\n\nYour total expenses this month is: {month_exp} NIS\n\nYour total income this month is: {month_inc} NIS\n\nOn the billing date, {remain} NIS will be remaining in your bank account.\n\nPress /menu to return to the Main Menu.",
                                        parse_mode=ParseMode.HTML)
@@ -353,14 +351,14 @@ async def display_exp_and_inc(user_id, month, context: CallbackContext):
         income_by_category[category].append((inc_entry, amount, description))
 
     # Format and display Expenses
-    view_message = "<b>הכנסות</b>"
+    view_message = "<b>הוצאות</b>"
     for category, entries in expenses_by_category.items():
         view_message += f"\n<u>{category}</u>\n"
         for entry in entries:
             view_message += "({:})  {:<10} {:<20}\n".format(entry[0], entry[1], entry[2])
 
     # Format and display Income
-    view_message += "\n\n<b>הוצאות</b>"
+    view_message += "\n\n<b>הכנסות</b>"
     for category, entries in income_by_category.items():
         view_message += f"\n<u>{category}</u>\n"
         for entry in entries:
@@ -417,7 +415,7 @@ async def button(update: Update, context: CallbackContext):
 
         if context.user_data['bank_account']:
             cursor.execute(f'UPDATE users SET bank_account = ? WHERE user_id = ?',
-                           (context.user_data['bank_account'], (user_id,)))
+                           (context.user_data['bank_account'], user_id))
             conn.commit()
 
         await context.bot.send_message(user_id, text="We are done! Thank you for your cooperation")
