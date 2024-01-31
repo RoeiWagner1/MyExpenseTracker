@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 TOKEN = 0
 # Read the token from the config file
-with open('config.txt') as file:
+with open('config_exp.txt') as file:
     lines = file.readlines()
     for line in lines:
         key, value = line.strip().split('=')
@@ -24,7 +24,7 @@ cursor.execute('''
         user_id INTEGER PRIMARY KEY,
         first_name TEXT,
         last_name TEXT,
-        bank_account REAL           
+        bank_account REAL    
     )
 ''')
 conn.commit()
@@ -34,7 +34,8 @@ cursor.execute('''
         exp_entry INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         category TEXT,
-        month TEXT,
+        month INTEGER,
+        year INTEGER,
         description TEXT,
         amount REAL,
         FOREIGN KEY(user_id) REFERENCES Users(user_id)
@@ -47,7 +48,8 @@ cursor.execute('''
         inc_entry INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         category TEXT,
-        month TEXT,
+        month INTEGER,
+        year INTEGER,
         description TEXT,
         amount REAL,
         FOREIGN KEY(user_id) REFERENCES Users(user_id)
@@ -89,7 +91,8 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.chat_id
-    await context.bot.send_message(user_id, text="Welcome! I'm your new expense tracker bot 😊\n\nHere, you can manage your monthly expenses and income. \nFeel free to add, edit, and track your financial transactions. \nYou can even keep an eye on your bank account balance!\n\nEnjoy!")
+    await context.bot.send_message(user_id,
+                                   text="Welcome! I'm your new expense tracker bot 😊\n\nHere, you can manage your monthly expenses and income. \nFeel free to add, edit, and track your financial transactions. \nYou can even keep an eye on your bank account balance!\n\nEnjoy!")
     await start_respond(user_id, context)
 
 
@@ -166,17 +169,19 @@ async def reset_database(user_id, context: CallbackContext):
 
 async def monthly_expenses(user_id, context: CallbackContext):
     month = datetime.datetime.now().month
+    year = datetime.datetime.now().year
     category = 'החזרים באשראי'
     total = 0
 
-    cursor.execute('SELECT amount FROM expenses WHERE user_id = ? AND month = ? AND category != ?', (user_id, month, "תנועות חשבון"))
+    cursor.execute('SELECT amount FROM expenses WHERE user_id = ? AND month = ? AND year = ? AND category != ?',
+                   (user_id, month, year, "תנועות חשבון"))
     results = cursor.fetchall()
     if results:
         for row in results:
             total += row[0]
 
-    cursor.execute('SELECT amount FROM income WHERE user_id = ? AND month = ? AND category = ?',
-                   (user_id, month, category))
+    cursor.execute('SELECT amount FROM income WHERE user_id = ? AND month = ? AND year = ? AND category = ?',
+                   (user_id, month, year, category))
     results = cursor.fetchall()
     if results:
         for row in results:
@@ -187,18 +192,19 @@ async def monthly_expenses(user_id, context: CallbackContext):
 
 async def monthly_income(user_id, context: CallbackContext):
     month = datetime.datetime.now().month
+    year = datetime.datetime.now().year
     category = 'החזרים באשראי'
     total = 0
 
-    cursor.execute('SELECT amount FROM income WHERE user_id = ? AND month = ? AND category != ?',
-                   (user_id, month, category))
+    cursor.execute('SELECT amount FROM income WHERE user_id = ? AND month = ? AND year = ? AND category != ?',
+                   (user_id, month, year, category))
     results = cursor.fetchall()
     if results:
         for row in results:
             total += row[0]
 
-    cursor.execute('SELECT amount FROM expenses WHERE user_id = ? AND month = ? AND category = ?',
-                   (user_id, month, "תנועות חשבון"))
+    cursor.execute('SELECT amount FROM expenses WHERE user_id = ? AND month = ? AND year = ? AND category = ?',
+                   (user_id, month, year, "תנועות חשבון"))
     results = cursor.fetchall()
     if results:
         for row in results:
@@ -290,6 +296,10 @@ async def add_expense(user_id, context: CallbackContext):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(user_id, text="Select a Category:", reply_markup=reply_markup)
+    year = datetime.datetime.now().year
+    await context.bot.send_message(user_id,
+                                   text=f"<b>Attention!</b>\n\nExpense entries will be recorded for the current year ({year}).\nTo change the year, use the 'Manage Finances' button in the Main Menu (/menu)",
+                                   parse_mode=ParseMode.HTML)
 
 
 async def add_income(user_id, context: CallbackContext):
@@ -315,23 +325,27 @@ async def add_income(user_id, context: CallbackContext):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(user_id, text="Select a Category:", reply_markup=reply_markup)
+    year = datetime.datetime.now().year
+    await context.bot.send_message(user_id,
+                                   text=f"<b>Attention!</b>\n\nIncome entries will be recorded for the current year ({year}).\nTo change the year, use the 'Manage Finances' button in the Main Menu (/menu)",
+                                   parse_mode=ParseMode.HTML)
 
 
 async def display_exp_and_inc(user_id, month, context: CallbackContext):
     cursor.execute('''
         SELECT exp_entry, description, category, amount
         FROM expenses
-        WHERE user_id = ? AND month = ?
+        WHERE user_id = ? AND month = ? AND year = ?
         ORDER BY category
-    ''', (user_id, month))
+    ''', (user_id, month, context.user_data['year']))
     expenses_data = cursor.fetchall()
 
     cursor.execute('''
         SELECT inc_entry, description, category, amount
         FROM income
-        WHERE user_id = ? AND month = ?
+        WHERE user_id = ? AND month = ? AND year = ?
         ORDER BY category
-    ''', (user_id, month))
+    ''', (user_id, month, context.user_data['year']))
     income_data = cursor.fetchall()
 
     # Create a dictionary to group expenses by category
@@ -533,15 +547,18 @@ async def button(update: Update, context: CallbackContext):
 
     elif data == "edit_income" or data == "edit_expense":
         data_split = data.split("_")[1]
-        await context.bot.send_message(user_id, text=f"Enter the {data_split} number you want to edit:")
+        await context.bot.send_message(user_id,
+                                       text=f"Enter the {data_split} number you want to edit:\n\n(You can find the number by clicking on the 'Expenses & Income' button in the Main Menu)")
         context.user_data['pending_action'] = f"{data_split}_entry"
 
-    elif data == "income_Month" or data == "expense_Month" or data == "income_Description" or data == "expense_Description" or data == "income_Amount" or data == "expense_Amount":
+    elif data == "income_Month" or data == "expense_Month" or data == "income_Year" or data == "expense_Year" or data == "income_Description" or data == "expense_Description" or data == "income_Amount" or data == "expense_Amount":
         split_category = data.split("_")[1]
         exp_or_inc = data.split("_")[0]
         response_message = f"Enter the new {split_category}:"
         if split_category == "Month":
             response_message += "\n\n(Use a number - 10 for October)"
+        if split_category == "Year":
+            response_message += "\n\n(Use 4 digits - for example 2023)"
         await context.bot.send_message(user_id, text=response_message)
         context.user_data['pending_action'] = f"new_{exp_or_inc}_{split_category}"
 
@@ -618,7 +635,6 @@ async def button(update: Update, context: CallbackContext):
 
     elif data == 'חשבונות_הו' or data == 'תנועות חשבון_הו' or data == 'שכירות_הו' or data == 'ברים ומסעדות_הו' or data == 'פנאי ובידור_הו' or data == 'חופשות_הו' or data == 'מחייה_הו' or data == 'תחבורה_הו' or data == 'לימודים/עבודה_הו' or data == 'קניות_הו' or data == 'הוראות קבע_הו' or data == 'הוצאות נוספות_הו' or data == 'משכורת_הכ' or data == 'העברות מאפליקציה_הכ' or data == 'תנועות חשבון_הכ' or data == 'החזרים באשראי_הכ' or data == 'הכנסות נוספות_הכ':
         context.user_data['category'] = data
-        context.user_data['pending_action'] = 'add_month'
         keyboard = [
             [
                 InlineKeyboardButton("1", callback_data='1'),
@@ -662,7 +678,8 @@ async def button(update: Update, context: CallbackContext):
 
     elif data == "delete_income" or data == "delete_expense":
         data_split = data.split("_")[1]
-        await context.bot.send_message(user_id, text=f"Enter the {data_split} number you want to delete:")
+        await context.bot.send_message(user_id,
+                                       text=f"Enter the {data_split} number you want to delete:\n\n(You can find the number by clicking on the 'Expenses & Income' button in the Main Menu)")
         context.user_data['pending_action'] = f"delete_{data_split}"
 
     elif data == '1' or data == '2' or data == '3' or data == '4' or data == '5' or data == '6' or data == '7' or data == '8' or data == '9' or data == '10' or data == '11' or data == '12':
@@ -671,6 +688,24 @@ async def button(update: Update, context: CallbackContext):
         context.user_data['pending_action'] = 'add_description'
 
     elif data == "exp&inc":
+        year = datetime.datetime.now().year
+        keyboard = [
+            [
+                InlineKeyboardButton(f"{year}", callback_data='this_year'),
+            ],
+            [
+                InlineKeyboardButton("Another Year", callback_data='another_year')
+            ],
+            [
+                InlineKeyboardButton("Back to Menu", callback_data='back_to_menu'),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await context.bot.send_message(user_id, text="Which year?", reply_markup=reply_markup)
+
+    elif data == "this_year":
+        year = datetime.datetime.now().year
+        context.user_data['year'] = year
         keyboard = [
             [
                 InlineKeyboardButton("1", callback_data='n_1'),
@@ -693,6 +728,11 @@ async def button(update: Update, context: CallbackContext):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(user_id, text="Which month?", reply_markup=reply_markup)
+
+    elif data == "another_year":
+        await context.bot.send_message(user_id,
+                                       text="Please enter the relevant year:\n\n(Use 4 digits - for example 2023)")
+        context.user_data['pending_action'] = 'year_view'
 
     elif data == 'n_1' or data == 'n_2' or data == 'n_3' or data == 'n_4' or data == 'n_5' or data == 'n_6' or data == 'n_7' or data == 'n_8' or data == 'n_9' or data == 'n_10' or data == 'n_11' or data == 'n_12':
         month = data.split("_")[1]
@@ -725,17 +765,23 @@ async def handle_user_input(update: Update, context: CallbackContext):
                                            reply_markup=reply_markup)
 
         elif pending_action == 'first_time_bank':
-            context.user_data['bank_account'] = user_input
-            keyboard = [
-                [
-                    InlineKeyboardButton("Yes", callback_data='yes_exp'),
-                    InlineKeyboardButton("No", callback_data='no_exp')
+            try:
+                float_value = float(user_input)
+                context.user_data['bank_account'] = float_value
+                keyboard = [
+                    [
+                        InlineKeyboardButton("Yes", callback_data='yes_exp'),
+                        InlineKeyboardButton("No", callback_data='no_exp')
+                    ]
                 ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_message(user_id,
-                                           text="Do you have expenses or income this month?",
-                                           reply_markup=reply_markup)
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await context.bot.send_message(user_id,
+                                               text="Do you have expenses or income this month?",
+                                               reply_markup=reply_markup)
+            except ValueError:
+                await context.bot.send_message(user_id,
+                                               text="Oops! It looks like you entered something other than numbers. Please try again :)")
+                await context.bot.send_message(user_id, text="Please enter your current bank account balance:")
 
         elif pending_action == 'first_time_exp':
             context.user_data['user_expenses'] = user_input
@@ -751,7 +797,7 @@ async def handle_user_input(update: Update, context: CallbackContext):
                     user_id,
                     context.user_data['first_name'],
                     context.user_data['last_name'],
-                    None
+                    None,
                 ))
             conn.commit()
 
@@ -806,39 +852,48 @@ async def handle_user_input(update: Update, context: CallbackContext):
             context.user_data['pending_action'] = 'add_amount'
 
         elif pending_action == 'add_amount':
-            context.user_data['amount'] = user_input
-            category = context.user_data['category']
-            exp_or_inc = category.split("_")[1]
-            split_category = category.split("_")[0]
-            if exp_or_inc == "הו":
-                cursor.execute('''
-                                INSERT OR REPLACE INTO expenses (user_id, category, month, description, amount)
-                                VALUES (?, ?, ?, ?, ?)
-                            ''', (
-                    user_id,
-                    split_category,
-                    context.user_data['month'],
-                    context.user_data['description'],
-                    context.user_data['amount']
-                ))
-                conn.commit()
-            else:
-                cursor.execute('''
-                                INSERT OR REPLACE INTO income (user_id, category, month, description, amount)
-                                VALUES (?, ?, ?, ?, ?)
-                            ''', (
-                    user_id,
-                    split_category,
-                    context.user_data['month'],
-                    context.user_data['description'],
-                    context.user_data['amount']
-                ))
-                conn.commit()
+            try:
+                float_value = float(user_input)
+                context.user_data['amount'] = float_value
+                category = context.user_data['category']
+                exp_or_inc = category.split("_")[1]
+                split_category = category.split("_")[0]
+                if exp_or_inc == "הו":
+                    cursor.execute('''
+                                    INSERT OR REPLACE INTO expenses (user_id, category, month, year, description, amount)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                ''', (
+                        user_id,
+                        split_category,
+                        context.user_data['month'],
+                        datetime.datetime.now().year,
+                        context.user_data['description'],
+                        context.user_data['amount']
+                    ))
+                    conn.commit()
+                else:
+                    cursor.execute('''
+                                    INSERT OR REPLACE INTO income (user_id, category, month, year, description, amount)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                ''', (
+                        user_id,
+                        split_category,
+                        context.user_data['month'],
+                        datetime.datetime.now().year,
+                        context.user_data['description'],
+                        context.user_data['amount']
+                    ))
+                    conn.commit()
 
-            await context.bot.send_message(user_id,
-                                           "Done!\n\nTo view your details, use the 'Expenses & Income' button in the Main Menu (/menu)")
-            await manage_finances_command(user_id, context)
-            context.user_data.clear()
+                await context.bot.send_message(user_id,
+                                               "Done!\n\nTo view your details, use the 'Expenses & Income' button in the Main Menu (/menu)")
+                await manage_finances_command(user_id, context)
+                context.user_data.clear()
+
+            except ValueError:
+                await context.bot.send_message(user_id,
+                                               text="Oops! It looks like you entered something other than numbers. Please try again :)")
+                await context.bot.send_message(user_id, text="Enter the amount:")
 
         elif pending_action == "income_entry" or pending_action == "expense_entry":
             entry = user_input
@@ -862,6 +917,9 @@ async def handle_user_input(update: Update, context: CallbackContext):
                         InlineKeyboardButton("Month", callback_data=f'{pending_split}_Month')
                     ],
                     [
+                        InlineKeyboardButton("Year", callback_data=f'{pending_split}_Year')
+                    ],
+                    [
                         InlineKeyboardButton("Description", callback_data=f'{pending_split}_Description')
                     ],
                     [
@@ -881,7 +939,7 @@ async def handle_user_input(update: Update, context: CallbackContext):
                 await context.bot.send_message(user_id,
                                                f"The specified entry is not found in your {exp_or_inc}. Please try again:")
 
-        elif pending_action == "new_income_Month" or pending_action == "new_expense_Month" or pending_action == "new_income_Description" or pending_action == "new_expense_Description" or pending_action == "new_income_Amount" or pending_action == "new_expense_Amount":
+        elif pending_action == "new_income_Month" or pending_action == "new_expense_Month" or pending_action == "new_income_Year" or pending_action == "new_expense_Year" or pending_action == "new_income_Description" or pending_action == "new_expense_Description" or pending_action == "new_income_Amount" or pending_action == "new_expense_Amount":
             exp_or_inc = pending_action.split("_")[1]
             split_category = pending_action.split("_")[2].lower()
             context.user_data[f"new_{split_category}"] = user_input
@@ -921,6 +979,38 @@ async def handle_user_input(update: Update, context: CallbackContext):
             else:
                 await context.bot.send_message(user_id,
                                                f"The specified entry is not found in your {exp_or_inc}. Please try again:")
+
+        elif pending_action == 'year_view':
+            if user_input.isdigit() and (len(user_input) == 4):
+                context.user_data['year'] = user_input
+                keyboard = [
+                    [
+                        InlineKeyboardButton("1", callback_data='n_1'),
+                        InlineKeyboardButton("2", callback_data='n_2'),
+                        InlineKeyboardButton("3", callback_data='n_3'),
+                        InlineKeyboardButton("4", callback_data='n_4')
+                    ],
+                    [
+                        InlineKeyboardButton("5", callback_data='n_5'),
+                        InlineKeyboardButton("6", callback_data='n_6'),
+                        InlineKeyboardButton("7", callback_data='n_7'),
+                        InlineKeyboardButton("8", callback_data='n_8')
+                    ],
+                    [
+                        InlineKeyboardButton("9", callback_data='n_9'),
+                        InlineKeyboardButton("10", callback_data='n_10'),
+                        InlineKeyboardButton("11", callback_data='n_11'),
+                        InlineKeyboardButton("12", callback_data='n_12')
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await context.bot.send_message(user_id, text="Which month?", reply_markup=reply_markup)
+            else:
+                await context.bot.send_message(user_id,
+                                               text="Oops! It looks like you entered an incorrect value. Please try again :)")
+                await context.bot.send_message(user_id,
+                                               text="Please enter the relevant year:\n\n(Use 4 digits - for example 2023)")
+
     else:
         cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
         result = cursor.fetchone()
